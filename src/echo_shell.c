@@ -5,25 +5,21 @@
 int main() {
   char buf[MAX];
   int n;
-  int exit_flag = 0; //made an exit flag, could use bools but wasn't working atm in emacs
-  int input_flag = 0; //this flag is for when input is done
 
-  while (exit_flag == 0) {
+  while (1) {
 
     n = 0; //reset buffer index
-    exit_flag = 0;
 
     //this is the input loop, reads one line, char by char
-    while (input_flag == 0) {
+    while (1) {
       char c;
-      input_flag = 0;
-      
+
       if (read(0, &c, 1) <= 0)
 	return 0;
 
       if (c == '\n') {
 	buf[n] = '\0';
-	input_flag = 1;
+	break;
       }
 
       if (n < MAX - 1)
@@ -36,7 +32,7 @@ int main() {
 	buf[2] == 'i' &&
 	buf[3] == 't' &&
 	buf[4] == '\0') {
-      exit_flag = 1;
+      break;
 	}
 
     //echo input back to user
