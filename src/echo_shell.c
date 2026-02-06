@@ -8,13 +8,13 @@ int main() {
   int exit_flag = 0; //made an exit flag, could use bools but wasn't working atm in emacs
   int input_flag = 0; //this flag is for when input is done
 
-  while (exit_flag != 0) {
+  while (exit_flag == 0) {
 
     n = 0; //reset buffer index
     exit_flag = 0;
 
     //this is the input loop, reads one line, char by char
-    while (input_flag != 0) {
+    while (input_flag == 0) {
       char c;
       input_flag = 0;
       
