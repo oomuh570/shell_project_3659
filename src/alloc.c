@@ -1,4 +1,5 @@
 #include "../include/alloc.h"
+#include <stddef.h>
 
 //Heap size (change if running into problems with alloc)
 #define HEAP_SZ 10000
@@ -34,7 +35,7 @@ char *alloc(int size)
 /*
 
 Function name: free_all
-Function purpose: Resets freep back to the start of the heap
+Function purpose: Resets freep back to the start of the heap and erases memory previously allocated
 Input: none
 Output: none
 
@@ -42,6 +43,12 @@ Output: none
 
 void free_all()
 {
+  int used_mem = freep - heap;
+
+  //erasing used memory
+  for (int i = 0; i < used_mem; i++)
+    heap[i] = 0;
+  
   //moves pointer to the start of heap
   freep = heap;
 }
