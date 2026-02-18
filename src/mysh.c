@@ -1,5 +1,4 @@
-#include "shell.h"
-#include "../include/command.h"
+#include "../include/shell.h"
 
 int main(void)
 {
