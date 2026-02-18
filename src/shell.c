@@ -13,7 +13,7 @@ static void print_prompt(void) {
 
 /* Reads a line into buf (null-terminated).
    Returns:
-     >=0 : length of line (not including '\0')
+     >=0 : length of line
      -1  : EOF or read error
      -2  : line too long (and flushed) */
 static int read_line(char *buf, int max) {
@@ -22,7 +22,7 @@ static int read_line(char *buf, int max) {
 
     while (1) {
         int r = read(0, &c, 1);
-        if (r <= 0) return -1;           // EOF or error
+        if (r <= 0) return -1;
 
         if (c == '\n') {
             buf[n] = '\0';
@@ -32,7 +32,7 @@ static int read_line(char *buf, int max) {
         if (n < max - 1) {
             buf[n++] = c;
         } else {
-            // Too long: flush rest of line until newline
+            /* too long: flush rest of line */
             while (c != '\n') {
                 r = read(0, &c, 1);
                 if (r <= 0) break;
@@ -46,7 +46,7 @@ static int read_line(char *buf, int max) {
 /* Copy line[start..end-1] into heap using alloc() */
 static char *copy_token(const char *line, int start, int end) {
     int len = end - start;
-    char *tok = alloc(len + 1);          // +1 for '\0'
+    char *tok = alloc(len + 1);      /* +1 for '\0' */
     if (!tok) return 0;
 
     for (int i = 0; i < len; i++) {
@@ -56,18 +56,35 @@ static char *copy_token(const char *line, int start, int end) {
     return tok;
 }
 
-/* Tokenize by spaces/tabs into cmd->argv/cmd->argc (keeps argv NULL-terminated). */
+/* Tokenize by spaces/tabs into cmd->argv/cmd->argc.
+   Handles "&" ONLY if it is the last token.
+   "&" is NOT stored in argv; it sets cmd->background = 1. */
 static void tokenize(const char *line, Command *cmd) {
     int i = 0;
 
     while (line[i] != '\0') {
-        // skip whitespace
+        /* skip whitespace */
         while (line[i] == ' ' || line[i] == '\t') i++;
         if (line[i] == '\0') break;
 
         int start = i;
         while (line[i] != '\0' && line[i] != ' ' && line[i] != '\t') i++;
         int end = i;
+
+        /* Detect token exactly "&" */
+        if ((end - start) == 1 && line[start] == '&') {
+            /* Only valid if it's the LAST token (ignoring trailing spaces) */
+            int j = end;
+            while (line[j] == ' ' || line[j] == '\t') j++;
+
+            if (line[j] == '\0') {
+                cmd->background = 1;
+                return; /* stop tokenizing */
+            } else {
+                write(2, "& must be at end\n", 16);
+                return;
+            }
+        }
 
         if (cmd->argc >= MAX_ARGS) {
             write(2, "Too many arguments\n", 19);
@@ -81,7 +98,7 @@ static void tokenize(const char *line, Command *cmd) {
         }
 
         cmd->argv[cmd->argc++] = tok;
-        cmd->argv[cmd->argc] = 0; // NULL terminate for execve/execvp
+        cmd->argv[cmd->argc] = 0; /* keep NULL-terminated */
     }
 }
 
@@ -95,12 +112,11 @@ void get_command(Command *cmd) {
     char line[MAX_LINE];
 
     command_init(cmd);
-
     print_prompt();
 
     int r = read_line(line, MAX_LINE);
     if (r == -1) {
-        // EOF/error: treat as exit so main loop can stop cleanly
+        /* EOF/error -> exit */
         cmd->argv[0] = "exit";
         cmd->argc = 1;
         cmd->argv[1] = 0;
@@ -111,35 +127,40 @@ void get_command(Command *cmd) {
         return;
     }
 
-    // Reset heap before storing token strings
+    /* reset heap before tokenizing */
     free_all();
 
-    // Split line into argv/argc
+    /* tokenize + fill cmd, may set cmd->background */
     tokenize(line, cmd);
 }
 
 void run_command(const Command *cmd) {
-    if (cmd->argc == 0) return; // empty line, do nothing
+    if (cmd->argc == 0) return;
 
     pid_t pid = fork();
+
     if (pid < 0) {
         write(2, "fork failed\n", 12);
         return;
     }
 
     if (pid == 0) {
-        // Child: try to execute program at argv[0]
+        /* child */
         extern char **environ;
         execve(cmd->argv[0], cmd->argv, environ);
 
-        // If execve returns, it failed
+        /* if execve returns, it failed */
         write(2, "execve failed\n", 14);
         _exit(127);
     }
 
-    // Parent: wait for child to finish
-    int status;
-    if (waitpid(pid, &status, 0) < 0) {
-        write(2, "waitpid failed\n", 15);
+    /* parent: only wait if NOT background */
+    if (!cmd->background) {
+        int status;
+        if (waitpid(pid, &status, 0) < 0) {
+            write(2, "waitpid failed\n", 15);
+        }
+    } else {
+        /* simple background: do not wait */
     }
 }

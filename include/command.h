@@ -6,6 +6,7 @@
 typedef struct {
     char *argv[MAX_ARGS + 1];  // array of argument strings, +1 for NULL terminator
     unsigned int argc;         // number of arguments
+    int background;           // flag indicating if the command should run in the background
    
 } Command;
 
