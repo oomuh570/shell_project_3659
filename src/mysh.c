@@ -2,7 +2,19 @@
 
 int main(void)
 {
-    Command command;
+	Job job;
+	
+	get_job(&job);
+	
+	while (!is_exit(&job)) {
+		run_job(&job);
+		get_job(&job);
+	}
+	
+	return 0;
+
+// Single command version
+/*    Command command;
 
     get_command(&command);
 
@@ -11,5 +23,5 @@ int main(void)
         get_command(&command);
     }
 
-    return 0;
+    return 0;*/
 }
