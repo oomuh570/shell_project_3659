@@ -1,9 +1,10 @@
-
+#include <fcntl.h> 		// open() flags O_RDONLY, O_WRONLY, etc.
 #include <unistd.h>     // read, write, _exit
 #include <sys/wait.h>   // waitpid
 #include "../include/shell.h"
 #include "../include/command.h"
-#include "../include/alloc.h"     
+#include "../include/alloc.h"
+#include "../include/job.h"     
 
 #define MAX_LINE 128  
 
@@ -56,6 +57,30 @@ static char *copy_token(const char *line, int start, int end) {
     return tok;
 }
 
+static char *get_next_token(const char *line, int *i) {
+    int start;
+	int end;
+	//
+    while (line[*i] == ' ' || line[*i] == '\t') {
+        (*i)++;
+    }
+
+    if (line[*i] == '\0' || line[*i] == '|' || line[*i] == '<' || line[*i] == '>') {
+        //
+        return 0; 
+    }
+
+    start = *i;
+    //
+    while (line[*i] != '\0' && line[*i] != ' ' && line[*i] != '\t' && 
+           line[*i] != '<' && line[*i] != '>' && line[*i] != '|') {
+        (*i)++;
+    }
+    end = *i;
+
+    return copy_token(line, start, end);
+}
+
 /* Tokenize by spaces/tabs into cmd->argv/cmd->argc.
    Handles "&" ONLY if it is the last token.
    "&" is NOT stored in argv; it sets cmd->background = 1. */
@@ -102,11 +127,74 @@ static void tokenize(const char *line, Command *cmd) {
     }
 }
 
+static void tokenize_job(const char *line, Job *job) {
+	int i = 0;
+	int start;
+	int end;
+	unsigned int current_stage = 0;
+	char *tok;
+	
+	 while (line[i] != '\0') {
+        /* skip whitespace */
+        while (line[i] == ' ' || line[i] == '\t') i++;
+        if (line[i] == '\0') break;
+		
+		//
+        start = i;
+        while (line[i] != '\0' && line[i] != ' ' && line[i] != '\t' && 
+               line[i] != '<' && line[i] != '>' && line[i] != '|' && line[i] != '&') {
+            i++;
+        }
+        end = i;
+
+        //
+        if (start == end) end = ++i;
+		
+		tok = copy_token(line, start, end);
+		
+		if (tok[0] == '|') {
+            if (current_stage < MAX_PIPELINE_LEN - 1) {
+                current_stage++;
+                job->num_stages = current_stage + 1;
+            }
+        } 
+		else if (tok[0] == '<') {
+            // infile
+            job->infile_path = get_next_token(line, &i); 
+        } 
+		else if (tok[0] == '>') {
+            // outfile
+            job->outfile_path = get_next_token(line, &i);
+        } 
+		else if (tok[0] == '&') {
+            job->background = 1;
+        } 
+		else {
+            // 
+            Command *cmd = &job->pipeline[current_stage];
+            if (cmd->argc < MAX_ARGS) {
+                cmd->argv[cmd->argc++] = tok;
+                cmd->argv[cmd->argc] = 0;
+            }
+            if (job->num_stages <= current_stage) job->num_stages = current_stage + 1;
+        }
+	 }
+}
+
+int is_exit(Job *job) {
+    if (job->num_stages != 1) return 0;
+    Command *cmd = &job->pipeline[0];
+	if (cmd->argc != 1) return 0;
+    char *s = cmd->argv[0];
+    return (s[0]=='e' && s[1]=='x' && s[2]=='i' && s[3]=='t' && s[4]=='\0');
+}
+
+/*
 int is_exit(const Command *cmd) {
     if (cmd->argc != 1) return 0;
     char *s = cmd->argv[0];
     return (s[0]=='e' && s[1]=='x' && s[2]=='i' && s[3]=='t' && s[4]=='\0');
-}
+}*/
 
 void get_command(Command *cmd) {
     char line[MAX_LINE];
@@ -163,4 +251,96 @@ void run_command(const Command *cmd) {
     } else {
         /* simple background: do not wait */
     }
+}
+
+//note this is overbuilt and can handle more than 2 commands in an argument
+void run_job(Job *job) {
+	if (job->num_stages == 0) return;
+
+    int pipefds[2]; // Used if num_stages > 1
+    int prev_pipe_read = -1;
+
+    for (unsigned int i = 0; i < job->num_stages; i++) {
+        // make pipe
+        if (i < job->num_stages - 1) {
+            if (pipe(pipefds) < 0) {
+                write(2, "pipe failed\n", 12);
+                return;
+            }
+        }
+
+        pid_t pid = fork();
+        if (pid < 0) {
+            write(2, "fork failed\n", 12);
+            return;
+        }
+
+        if (pid == 0) {
+            // Input handling
+            if (i == 0 && job->infile_path) {
+                int fd = open(job->infile_path, O_RDONLY);
+                if (fd < 0) { write(2, "file open failed\n", 17); _exit(1); }
+                dup2(fd, 0); // 
+                close(fd);
+            } else if (i > 0) {
+                // get input
+                dup2(prev_pipe_read, 0);
+                close(prev_pipe_read);
+            }
+
+            // Output handling
+            if (i == job->num_stages - 1 && job->outfile_path) {
+                int fd = open(job->outfile_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                if (fd < 0) { write(2, "file open failed\n", 17); _exit(1); }
+                dup2(fd, 1); //
+                close(fd);
+            } else if (i < job->num_stages - 1) {
+                // to pipe
+                dup2(pipefds[1], 1);
+                close(pipefds[1]);
+                close(pipefds[0]); //
+            }
+			extern char **environ;
+            execve(job->pipeline[i].argv[0], job->pipeline[i].argv, environ);
+            write(2, "execve failed\n", 14);
+            _exit(127);
+        }
+
+        if (i > 0) close(prev_pipe_read);
+        if (i < job->num_stages - 1) {
+            close(pipefds[1]); // 
+            prev_pipe_read = pipefds[0]; // 
+        }
+
+        //
+        if (!job->background) {
+            waitpid(pid, NULL, 0);
+        }
+    }
+}
+
+void get_job(Job *job) {
+	char line[MAX_LINE];
+
+    job_init(job); //
+    print_prompt();
+
+    int r = read_line(line, MAX_LINE);
+    if (r == -1) {
+        //
+        job->pipeline[0].argv[0] = "exit";
+        job->pipeline[0].argc = 1;
+        job->num_stages = 1;
+        return;
+    }
+    if (r == -2) {
+        write(2, "Line too long\n", 14);
+        return;
+    }
+
+    //
+    free_all();
+
+    //
+    tokenize_job(line, job);
 }

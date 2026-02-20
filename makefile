@@ -3,7 +3,7 @@ CFLAGS  = -Wall -Wextra -std=c11 -Iinclude
 
 # --- Main shell ---
 MYSH_SRC = src/mysh.c
-LIB_SRC  = src/shell.c src/command.c src/alloc.c src/strlib.c
+LIB_SRC  = src/shell.c src/job.c src/command.c src/alloc.c src/strlib.c
 
 MYSH_OBJ = $(MYSH_SRC:.c=.o)
 LIB_OBJ  = $(LIB_SRC:.c=.o)
