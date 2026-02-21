@@ -8,15 +8,32 @@
 
 #define MAX_LINE 128  
 
+/*
+
+FUNCTION: print_prompt
+PURPOSE: Writes the char '$' a the beginning of the shell command line
+INPUT: none
+OUTPUT: none
+
+*/
+
 static void print_prompt(void) {
     write(1, "$ ", 2);
 }
 
-/* Reads a line into buf (null-terminated).
-   Returns:
-     >=0 : length of line
-     -1  : EOF or read error
-     -2  : line too long (and flushed) */
+/*
+
+FUNCTION: read_line
+PURPOSE: Reads the input on the command line into buf, outputs
+         errors if read error or line too long
+INPUT: char *buf - command line buffer
+       int max - max size of buffer
+OUTPUT:  0 - length of line
+        -1 - read() fails or EOF
+        -2 - input line too long
+
+*/
+
 static int read_line(char *buf, int max) {
     int n = 0;
     char c;
@@ -44,7 +61,18 @@ static int read_line(char *buf, int max) {
     }
 }
 
-/* Copy line[start..end-1] into heap using alloc() */
+/*
+
+FUNCTION: copy_token
+PURPOSE: to copy the token into head using the alloc function
+INPUT: *line - command line
+       start - beginning of line
+       end - end of line
+OUTPUT: 0 - if there is not enough space
+        tok - tokenized array
+
+*/
+
 static char *copy_token(const char *line, int start, int end) {
     int len = end - start;
     char *tok = alloc(len + 1);      /* +1 for '\0' */
@@ -56,6 +84,8 @@ static char *copy_token(const char *line, int start, int end) {
     tok[len] = '\0';
     return tok;
 }
+
+
 
 static char *get_next_token(const char *line, int *i) {
     int start;
