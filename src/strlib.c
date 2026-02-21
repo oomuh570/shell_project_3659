@@ -29,3 +29,12 @@ void strcpy2(char *dst, const char *src)
     dst[i] = '\0';
 }
 
+int strcntn(const char *s, char c)
+{
+  while(*s){
+    if(*s == c)
+      return 1;
+    s++;
+  }
+  return 0;
+}
