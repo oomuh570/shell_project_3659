@@ -259,7 +259,8 @@ void run_job(Job *job) {
 
     int pipefds[2]; // Used if num_stages > 1
     int prev_pipe_read = -1;
-
+    pid_t pids[MAX_PIPELINE_LEN];
+    
     for (unsigned int i = 0; i < job->num_stages; i++) {
         // make pipe
         if (i < job->num_stages - 1) {
@@ -306,16 +307,21 @@ void run_job(Job *job) {
             _exit(127);
         }
 
+	pids[i] = pid; //adding pid to array of pids
+	
         if (i > 0) close(prev_pipe_read);
         if (i < job->num_stages - 1) {
             close(pipefds[1]); // 
             prev_pipe_read = pipefds[0]; // 
         }
 
-        //
-        if (!job->background) {
-            waitpid(pid, NULL, 0);
-        }
+    }
+    if(!job->background) {
+      for(unsigned int i = 0; i < job->num_stages; i++) {
+	if (waitpid(pids[i], NULL, 0) < 0) {
+	  write(1, "waitpid error", 13);
+	}
+      }
     }
 }
 
