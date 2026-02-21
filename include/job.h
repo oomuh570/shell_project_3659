@@ -3,7 +3,7 @@
 
 #include "command.h"
 
-#define MAX_PIPELINE_LEN 2
+#define MAX_PIPELINE_LEN 16
 
 typedef struct {
 	Command pipeline[MAX_PIPELINE_LEN];
