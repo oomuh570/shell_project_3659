@@ -1,12 +1,21 @@
 #include <fcntl.h> 		// open() flags O_RDONLY, O_WRONLY, etc.
 #include <unistd.h>     // read, write, _exit
 #include <sys/wait.h>   // waitpid
+#include <errno.h>      // errno
+#include <string.h>     // strerror
 #include "../include/shell.h"
 #include "../include/command.h"
 #include "../include/alloc.h"
 #include "../include/job.h"     
 
 #define MAX_LINE 128  
+
+/* Helper macro to write an error message with strerror */
+#define ERR_SYS(msg) do { \
+    write(2, msg ": ", sizeof(msg)+1); \
+    write(2, strerror(errno), strlen(strerror(errno))); \
+    write(2, "\n", 1); \
+} while(0)
 
 /*
 
@@ -40,7 +49,11 @@ static int read_line(char *buf, int max) {
 
     while (1) {
         int r = read(0, &c, 1);
-        if (r <= 0) return -1;
+        if (r < 0) {
+            ERR_SYS("read failed");
+            return -1;
+        }
+        if (r == 0) return -1; /* EOF */
 
         if (c == '\n') {
             buf[n] = '\0';
@@ -136,7 +149,7 @@ static void tokenize(const char *line, Command *cmd) {
                 cmd->background = 1;
                 return; /* stop tokenizing */
             } else {
-                write(2, "& must be at end\n", 16);
+                write(2, "& must be at end\n", 17);
                 return;
             }
         }
@@ -234,7 +247,8 @@ static void tokenize_job(const char *line, Job *job) {
 
             if (line[i] != '\0') {
                 write(2, "syntax error: '&' must be at end\n", 33);
-                job->num_stages = 0 ;  // invalidate job
+                job->num_stages = 0;  // invalidate job
+                job->background = 0;
             }
             return; /* stop tokenizing */
         } 
@@ -297,7 +311,7 @@ void run_command(const Command *cmd) {
     pid_t pid = fork();
 
     if (pid < 0) {
-        write(2, "fork failed\n", 12);
+        ERR_SYS("fork failed");
         return;
     }
 
@@ -307,7 +321,7 @@ void run_command(const Command *cmd) {
         execve(cmd->argv[0], cmd->argv, environ);
 
         /* if execve returns, it failed */
-        write(2, "execve failed\n", 14);
+        ERR_SYS("execve failed");
         _exit(127);
     }
 
@@ -315,7 +329,7 @@ void run_command(const Command *cmd) {
     if (!cmd->background) {
         int status;
         if (waitpid(pid, &status, 0) < 0) {
-            write(2, "waitpid failed\n", 15);
+            ERR_SYS("waitpid failed");
         }
     } else {
         /* simple background: do not wait */
@@ -334,14 +348,14 @@ void run_job(Job *job) {
         // make pipe
         if (i < job->num_stages - 1) {
             if (pipe(pipefds) < 0) {
-                write(2, "pipe failed\n", 12);
+                ERR_SYS("pipe failed");
                 return;
             }
         }
 
         pid_t pid = fork();
         if (pid < 0) {
-            write(2, "fork failed\n", 12);
+            ERR_SYS("fork failed");
             return;
         }
 
@@ -349,30 +363,28 @@ void run_job(Job *job) {
             // Input handling
             if (i == 0 && job->infile_path) {
                 int fd = open(job->infile_path, O_RDONLY);
-                if (fd < 0) { write(2, "file open failed\n", 17); _exit(1); }
-                dup2(fd, 0); // 
+                if (fd < 0) { ERR_SYS("open failed"); _exit(1); }
+                if (dup2(fd, 0) < 0) { ERR_SYS("dup2 failed"); _exit(1); }
                 close(fd);
             } else if (i > 0) {
-                // get input
-                dup2(prev_pipe_read, 0);
+                if (dup2(prev_pipe_read, 0) < 0) { ERR_SYS("dup2 failed"); _exit(1); }
                 close(prev_pipe_read);
             }
 
             // Output handling
             if (i == job->num_stages - 1 && job->outfile_path) {
                 int fd = open(job->outfile_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                if (fd < 0) { write(2, "file open failed\n", 17); _exit(1); }
-                dup2(fd, 1); //
+                if (fd < 0) { ERR_SYS("open failed"); _exit(1); }
+                if (dup2(fd, 1) < 0) { ERR_SYS("dup2 failed"); _exit(1); }
                 close(fd);
             } else if (i < job->num_stages - 1) {
-                // to pipe
-                dup2(pipefds[1], 1);
+                if (dup2(pipefds[1], 1) < 0) { ERR_SYS("dup2 failed"); _exit(1); }
                 close(pipefds[1]);
-                close(pipefds[0]); //
+                close(pipefds[0]);
             }
 			extern char **environ;
             execve(job->pipeline[i].argv[0], job->pipeline[i].argv, environ);
-            write(2, "execve failed\n", 14);
+            ERR_SYS("execve failed");
             _exit(127);
         }
 
@@ -380,16 +392,16 @@ void run_job(Job *job) {
 	
         if (i > 0) close(prev_pipe_read);
         if (i < job->num_stages - 1) {
-            close(pipefds[1]); // 
-            prev_pipe_read = pipefds[0]; // 
+            close(pipefds[1]);
+            prev_pipe_read = pipefds[0];
         }
 
     }
     if(!job->background) {
       for(unsigned int i = 0; i < job->num_stages; i++) {
-	if (waitpid(pids[i], NULL, 0) < 0) {
-	  write(1, "waitpid error", 13);
-	}
+        if (waitpid(pids[i], NULL, 0) < 0) {
+            ERR_SYS("waitpid failed");
+        }
       }
     }
 }
