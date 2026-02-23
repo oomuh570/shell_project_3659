@@ -29,8 +29,10 @@
 - Shell returns prompt immediately without waiting for background job to finish
 
 ### Signal Handling
-- `Ctrl+C` (SIGINT) kills the foreground process but does NOT kill the shell
-- Shell ignores SIGINT; child processes reset SIGINT to default
+- `Ctrl+C` (SIGINT) is handled via a custom signal handler in `signals.c`
+- Shell does not terminate on `Ctrl+C` — the current input line is interrupted and a fresh prompt is shown
+- Child processes reset SIGINT to default so foreground commands can be killed with `Ctrl+C`
+- Implemented using `sigaction()` for reliable POSIX signal handling
 
 ### Error Handling
 - All system calls checked for errors with descriptive messages using `errno` and `strerror`
@@ -98,14 +100,17 @@ $ exit
 │   ├── shell.h       # Shell function declarations
 │   ├── job.h         # Job struct and definitions
 │   ├── command.h     # Command struct and definitions
-│   └── alloc.h       # Memory allocator declarations
+│   ├── alloc.h       # Memory allocator declarations
+│   ├── signals.h     # Signal handler declarations
+│   └── strlib.h      # String utility declarations
 ├── src/
 │   ├── mysh.c        # Main entry point
 │   ├── shell.c       # Core shell logic
 │   ├── job.c         # Job initialization
 │   ├── command.c     # Command initialization
 │   ├── alloc.c       # Custom heap allocator
-│   └── strlib.c      # String utilities
+│   ├── strlib.c      # String utilities
+│   └── signals.c     # SIGINT signal handler
 └── tests/
     ├── test_basic.txt
     ├── test_pipes.txt
@@ -144,7 +149,7 @@ Run the shell, type the command below, then press `Ctrl+C`:
 ```
 sleep 10
 ```
-Expected: sleep dies, shell stays alive and returns `$` prompt.
+Expected: sleep dies, shell stays alive and returns fresh `$` prompt.
 
 ---
 
@@ -152,8 +157,8 @@ Expected: sleep dies, shell stays alive and returns `$` prompt.
 
 | Error | Cause |
 |-------|-------|
-| `syntax error: '|' cannot start command` | Pipe at start of command |
-| `syntax error: '|' must be followed by command` | Pipe at end or double pipe |
+| `syntax error: '\|' cannot start command` | Pipe at start of command |
+| `syntax error: '\|' must be followed by command` | Pipe at end or double pipe |
 | `syntax error: '&' must be at end` | `&` not at end of command |
 | `Expected output file after '>'` | Missing filename after `>` |
 | `Expected input file after '<'` | Missing filename after `<` |
@@ -173,18 +178,28 @@ Expected: sleep dies, shell stays alive and returns `$` prompt.
 - All I/O done via `read()` and `write()` system calls
 - Pipelines handled by creating a new pipe between each stage
 - Background jobs forked and not waited on
-- Signal handling via `signal()` — shell ignores SIGINT, children reset to default
+- Signal handling implemented via `sigaction()` in `signals.c` using a volatile flag
+- `signals_init()` called at shell startup to install the SIGINT handler
+- Child processes reset SIGINT to default using `signal(SIGINT, SIG_DFL)`
 - Command path search via `find_path()` which reads the `PATH` environment variable
 
 ---
 
-## Limitations
+## Known Limitations
 
 - No command history
 - No tab completion
 - No shell variables or expansion
-- No advanced job control (fg, bg, jobs)
+- No advanced job control (fg, bg, jobs, Ctrl+Z)
 - Command line length limited to 128 characters
 - No support for quoting or escape characters
+- Background jobs do not notify the shell when they finish
 
 ---
+
+## Authors
+
+- Slater Dennington
+- Ochihai Omuha
+- Salman Tajammal
+- Dan Meulendyk
