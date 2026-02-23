@@ -9,7 +9,7 @@ Purpose: Executes the shell
 */
 
 #include "../include/shell.h"
-
+#include <signal.h>
 /*
 
 FUNCTION: main
@@ -21,6 +21,10 @@ OUTPUT: none
 
 int main(void)
 {
+
+	/* shell ignores SIGINT so Ctrl+C does not kill it */
+    signal(SIGINT, SIG_IGN);
+
 	Job job;
 	
 	get_job(&job);
