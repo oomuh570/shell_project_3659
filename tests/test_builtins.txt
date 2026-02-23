@@ -1,0 +1,8 @@
+pwd
+cd /tmp
+pwd
+cd /
+pwd
+cd /nonexistent
+cd
+exit

@@ -424,13 +424,52 @@ char *find_path(const char *cmd){
 
 FUNCTION: run_job
 PURPOSE: Runs the job being passed while creating children and duplication using fork() and dup2().
-         Executes job using execve().
+         Executes job using execve(). Handles built-in commands cd and pwd.
 INPUT: *job - Job to be processed
 OUTPUT: none
          
 */
 void run_job(Job *job) {
 	if (job->num_stages == 0) return;
+
+    /* handle built-in cd command */
+    if (job->num_stages == 1) {
+        Command *cmd = &job->pipeline[0];
+        if (cmd->argc >= 1 &&
+            cmd->argv[0][0] == 'c' &&
+            cmd->argv[0][1] == 'd' &&
+            cmd->argv[0][2] == '\0') {
+
+            if (cmd->argc < 2) {
+                write(2, "cd: missing argument\n", 21);
+                return;
+            }
+            if (chdir(cmd->argv[1]) < 0) {
+                ERR_SYS("cd failed");
+            }
+            return;
+        }
+    }
+
+    /* handle built-in pwd command */
+    if (job->num_stages == 1) {
+        Command *cmd = &job->pipeline[0];
+        if (cmd->argc >= 1 &&
+            cmd->argv[0][0] == 'p' &&
+            cmd->argv[0][1] == 'w' &&
+            cmd->argv[0][2] == 'd' &&
+            cmd->argv[0][3] == '\0') {
+
+            char buf[MAX_PATH];
+            if (getcwd(buf, sizeof(buf)) == NULL) {
+                ERR_SYS("pwd failed");
+            } else {
+                write(1, buf, strlen(buf));
+                write(1, "\n", 1);
+            }
+            return;
+        }
+    }
 
     int pipefds[2]; // Used if num_stages > 1
     int prev_pipe_read = -1;

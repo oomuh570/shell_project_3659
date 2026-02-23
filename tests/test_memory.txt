@@ -1,0 +1,11 @@
+/bin/echo test1
+/bin/echo test2
+/bin/echo test3
+/bin/echo test4
+/bin/echo test5
+/bin/ls | /usr/bin/wc -l
+/bin/ls | /usr/bin/wc -l
+/bin/ls | /usr/bin/wc -l
+/bin/ls | /usr/bin/wc -l
+/bin/ls | /usr/bin/wc -l
+exit

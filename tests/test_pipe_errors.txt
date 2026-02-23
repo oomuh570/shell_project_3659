@@ -1,0 +1,4 @@
+| /usr/bin/wc -l
+/bin/ls |
+/bin/ls || /usr/bin/wc -l
+exit

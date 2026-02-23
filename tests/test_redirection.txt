@@ -1,0 +1,8 @@
+/bin/ls > out.txt
+/bin/cat out.txt
+/bin/ls -al . > out.txt
+/bin/cat out.txt
+/usr/bin/wc -l < out.txt
+/bin/ls | /usr/bin/wc -l > count.txt
+/bin/cat count.txt
+exit
