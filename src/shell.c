@@ -95,7 +95,7 @@ static char *get_next_token(const char *line, int *i) {
         (*i)++;
     }
 
-    if (line[*i] == '\0' || line[*i] == '|' || line[*i] == '<' || line[*i] == '>') {
+    if (line[*i] == '\0' || line[*i] == '|' || line[*i] == '<' || line[*i] == '>' || line[*i] == '&') {
         //
         return 0; 
     }
@@ -103,7 +103,7 @@ static char *get_next_token(const char *line, int *i) {
     start = *i;
     //
     while (line[*i] != '\0' && line[*i] != ' ' && line[*i] != '\t' && 
-           line[*i] != '<' && line[*i] != '>' && line[*i] != '|') {
+           line[*i] != '<' && line[*i] != '>' && line[*i] != '|' && line[*i] != '&') {
         (*i)++;
     }
     end = *i;
@@ -183,21 +183,60 @@ static void tokenize_job(const char *line, Job *job) {
 		tok = copy_token(line, start, end);
 		
 		if (tok[0] == '|') {
-            if (current_stage < MAX_PIPELINE_LEN - 1) {
-                current_stage++;
-                job->num_stages = current_stage + 1;
+            // must have a command before pipe and cannot exceed max stages
+            if (job->pipeline[current_stage].argc == 0) {
+                write(2, "syntax error: '|' cannot start command\n", 40);
+                job->num_stages = 0; // invalidate job
+                return;
+            } 
+            else if (current_stage >= MAX_PIPELINE_LEN - 1) {
+                write(2, "syntax error: too many pipeline stages\n", 40);
+                job->num_stages = 0; // invalidate job
+                return;
+            } 
+
+            // move to next stage
+            current_stage++;
+            job->num_stages = current_stage + 1;
+
+            // next must not be end or another special char
+            while (line[i] == ' ' || line[i] == '\t') i++;
+            if (line[i] == '\0' || line[i] == '|' || line[i] == '<' || line[i] == '>' || line[i] == '&') {
+                write(2, "syntax error: '|' must be followed by command\n", 47);
+                job->num_stages = 0; // invalidate job
+                return;
             }
-        } 
+    
+        }
+     
 		else if (tok[0] == '<') {
             // infile
-            job->infile_path = get_next_token(line, &i); 
+            job->infile_path = get_next_token(line, &i);
+            if (!job->infile_path) {
+                write(2, "Expected input file after '<'\n", 30);
+                return;
+            }
         } 
 		else if (tok[0] == '>') {
             // outfile
             job->outfile_path = get_next_token(line, &i);
+            if (!job->outfile_path) {
+                write(2, "Expected output file after '>'\n", 31);
+                job->num_stages = 0; // ensure it's null if error
+                return;
+            }
         } 
 		else if (tok[0] == '&') {
             job->background = 1;
+
+            /* Only valid if it's the LAST token (ignoring trailing spaces) */
+            while (line[i] == ' ' || line[i] == '\t') i++;
+
+            if (line[i] != '\0') {
+                write(2, "syntax error: '&' must be at end\n", 33);
+                job->num_stages = 0 ;  // invalidate job
+            }
+            return; /* stop tokenizing */
         } 
 		else {
             // 
