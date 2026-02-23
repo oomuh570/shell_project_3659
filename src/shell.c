@@ -1,3 +1,13 @@
+/*
+
+File Name: shell.c
+Author(s): Slater Dennington, Ochihai Omuha, Salman Tajammal, Dan Meulendyk
+Creation Date: Feb 14th, 2026
+Last Modified Date: Feb 22nd, 2026
+Purpose: Contains all the functions for implementing the shell
+
+*/
+
 #include <fcntl.h> 		// open() flags O_RDONLY, O_WRONLY, etc.
 #include <unistd.h>     // read, write, _exit
 #include <sys/wait.h>   // waitpid

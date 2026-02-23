@@ -1,3 +1,12 @@
+/*
+
+File Name: alloc.c
+Author(s): Slated Dennington, Ochihai Omuha, Salman Tajammal , Dan Meulendyk
+Creation Date: Feb. 13th, 2026
+Last Modified Date: Feb. 13th, 2026
+Purpose: Allocates memory dynamically without using C libraries
+
+*/
 #include "../include/alloc.h"
 #include <stddef.h>
 

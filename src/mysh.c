@@ -1,4 +1,23 @@
+/*
+
+File Name: mysh.c
+Author(s): Slater Dennington, Ochihai Omuha, Salman Tajammal, Dan Meulendyk
+Creation Date: Feb 14th, 2026
+Last Modified Date: Feb 14th, 2026
+Purpose: Executes the shell
+
+*/
+
 #include "../include/shell.h"
+
+/*
+
+FUNCTION: main
+PURPOSE: Runs the shell
+INPUT: none
+OUTPUT: none
+
+*/
 
 int main(void)
 {
