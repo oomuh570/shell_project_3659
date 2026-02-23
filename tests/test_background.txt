@@ -1,0 +1,6 @@
+/bin/ls &
+/bin/ls | /usr/bin/wc -l &
+/bin/ls > out.txt &
+/bin/ls & /bin/echo hi
+& /bin/ls
+exit
