@@ -4,6 +4,8 @@
 #include <errno.h>      // errno
 #include <string.h>     // strerror
 #include <signal.h>     // signal
+#include <sys/stat.h>
+#include "../include/strlib.h"
 #include "../include/shell.h"
 #include "../include/command.h"
 #include "../include/alloc.h"
@@ -267,6 +269,8 @@ int is_exit(const Command *cmd) {
     return (s[0]=='e' && s[1]=='x' && s[2]=='i' && s[3]=='t' && s[4]=='\0');
 }
 
+*/
+
 /*
 
 FUNCTION: get_command
@@ -362,31 +366,42 @@ char *find_path(const char *cmd){
       break;
     }
 
-    /* handle built-in pwd command */
-    if (job->num_stages == 1) {
-        Command *cmd = &job->pipeline[0];
-        if (cmd->argc >= 1 &&
-            cmd->argv[0][0] == 'p' &&
-            cmd->argv[0][1] == 'w' &&
-            cmd->argv[0][2] == 'd' &&
-            cmd->argv[0][3] == '\0') {
+    if(!path_env)
+      path_env = "/bin:/usr/bin";
 
-            char buf[MAX_PATH];
-            if (getcwd(buf, sizeof(buf)) == NULL) {
-                ERR_SYS("pwd failed");
-            } else {
-                write(1, buf, strlen(buf));
-                write(1, "\n", 1);
-            }
-            return;
-        }
-    }
+    static char path[256]; //fixes compiler warning
+    unsigned int cmd_len = strlen(cmd);
 
-    if(path_env[i] == '\0')
-      break;
+    int i = 0;
+    int start = 0;
 
-    i++;
-    start = i;
+    while (1) {
+
+      while(path_env[i] != ':' && path_env[i] != '\0')
+	i++;
+
+      int dir_len = i - start;
+      int j = 0;
+
+      for (int k = 0; k < dir_len; k++)
+	path[j++] = path_env[start + k];
+
+      path[j++] = '/';
+
+      for (unsigned int k = 0; k < cmd_len; k++)
+	path[j++] = cmd[k];
+
+      path[j] = '\0';
+
+      struct stat sb;
+      if(stat(path, &sb) == 0)
+	return path;
+
+      if(path_env[i] == '\0')
+	break;
+
+      i++;
+      start = i;
   }
   return 0;
 }
@@ -452,7 +467,14 @@ void run_job(Job *job) {
             }
 
             extern char **environ;
-            execve(job->pipeline[i].argv[0], job->pipeline[i].argv, environ);
+	    char *path = find_path(job->pipeline[i].argv[0]);
+
+	    if(!path) {
+	      write(2, "command not found\n", 18);
+	      _exit(127);
+	    }
+	    
+            execve(path, job->pipeline[i].argv, environ);
             ERR_SYS("execve failed");
             _exit(127);
         }
