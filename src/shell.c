@@ -233,6 +233,7 @@ static void tokenize_job(const char *line, Job *job) {
             job->infile_path = get_next_token(line, &i);
             if (!job->infile_path) {
                 write(2, "Expected input file after '<'\n", 30);
+                job->num_stages = 0;
                 return;
             }
         } 
