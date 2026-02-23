@@ -24,12 +24,22 @@ Purpose: Contains all the functions for implementing the shell
 #define MAX_LINE 128
 #define MAX_PATH 1024
 
-/* Helper macro to write an error message with strerror */
+/* Helper macro to write an error message with strerror 
 #define ERR_SYS(msg) do { \
     write(2, msg ": ", sizeof(msg)+1); \
     write(2, strerror(errno), strlen(strerror(errno))); \
     write(2, "\n", 1); \
 } while(0)
+
+*/
+static void err_sys(const char *msg)
+{
+    const char *e = strerror(errno);
+    write(2, msg, strlen2(msg));
+    write(2, ": ", 2);
+    write(2, e, strlen2(e));
+    write(2, "\n", 1);
+}
 
 static void print_prompt(void) {
     write(1, "$ ", 2);
@@ -45,7 +55,7 @@ static int read_line(char *buf, int max) {
 		if (errno == EINTR) {
 	return -3; //interuppted by CTRL:-C
 	}
-            ERR_SYS("read failed");
+            err_sys("read failed");
             return -1;
         }
         if (r == 0) return -1;
@@ -330,21 +340,21 @@ void run_command(const Command *cmd) {
     pid_t pid = fork();
 
     if (pid < 0) {
-        ERR_SYS("fork failed");
+        err_sys("fork failed");
         return;
     }
 
     if (pid == 0) {
         extern char **environ;
         execve(cmd->argv[0], cmd->argv, environ);
-        ERR_SYS("execve failed");
+        err_sys("execve failed");
         _exit(127);
     }
 
     if (!cmd->background) {
         int status;
         if (waitpid(pid, &status, 0) < 0) {
-            ERR_SYS("waitpid failed");
+            err_sys("waitpid failed");
         }
     }
 }
@@ -448,7 +458,7 @@ void run_job(Job *job) {
                 return;
             }
             if (chdir(cmd->argv[1]) < 0) {
-                ERR_SYS("cd failed");
+                err_sys("cd failed");
             }
             return;
         }
@@ -465,7 +475,7 @@ void run_job(Job *job) {
 
             char buf[MAX_PATH];
             if (getcwd(buf, sizeof(buf)) == NULL) {
-                ERR_SYS("pwd failed");
+                err_sys("pwd failed");
             } else {
                 write(1, buf, strlen(buf));
                 write(1, "\n", 1);
@@ -481,14 +491,14 @@ void run_job(Job *job) {
     for (unsigned int i = 0; i < job->num_stages; i++) {
         if (i < job->num_stages - 1) {
             if (pipe(pipefds) < 0) {
-                ERR_SYS("pipe failed");
+                err_sys("pipe failed");
                 return;
             }
         }
 
         pid_t pid = fork();
         if (pid < 0) {
-            ERR_SYS("fork failed");
+            err_sys("fork failed");
             return;
         }
 
@@ -499,22 +509,22 @@ void run_job(Job *job) {
             // Input handling
             if (i == 0 && job->infile_path) {
                 int fd = open(job->infile_path, O_RDONLY);
-                if (fd < 0) { ERR_SYS("open failed"); _exit(1); }
-                if (dup2(fd, 0) < 0) { ERR_SYS("dup2 failed"); _exit(1); }
-                close(fd);
+                if (fd < 0) { err_sys("open failed"); _exit(1); }
+                if (dup2(fd, 0) < 0) { err_sys("dup2 failed"); _exit(1); }
+                if (close(fd) < 0) err_sys("close failed");
             } else if (i > 0) {
-                if (dup2(prev_pipe_read, 0) < 0) { ERR_SYS("dup2 failed"); _exit(1); }
+                if (dup2(prev_pipe_read, 0) < 0) { err_sys("dup2 failed"); _exit(1); }
                 close(prev_pipe_read);
             }
 
             // Output handling
             if (i == job->num_stages - 1 && job->outfile_path) {
                 int fd = open(job->outfile_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                if (fd < 0) { ERR_SYS("open failed"); _exit(1); }
-                if (dup2(fd, 1) < 0) { ERR_SYS("dup2 failed"); _exit(1); }
-                close(fd);
+                if (fd < 0) { err_sys("open failed"); _exit(1); }
+                if (dup2(fd, 1) < 0) { err_sys("dup2 failed"); _exit(1); }
+                if (close(fd) < 0) err_sys("close failed");
             } else if (i < job->num_stages - 1) {
-                if (dup2(pipefds[1], 1) < 0) { ERR_SYS("dup2 failed"); _exit(1); }
+                if (dup2(pipefds[1], 1) < 0) { err_sys("dup2 failed"); _exit(1); }
                 close(pipefds[1]);
                 close(pipefds[0]);
             }
@@ -523,12 +533,12 @@ void run_job(Job *job) {
 	    char *path = find_path(job->pipeline[i].argv[0]);
 
 	    if(!path) {
-	      write(2, "command not found\n", 18);
+	      err_sys("execve failed");
 	      _exit(127);
 	    }
 
             execve(path, job->pipeline[i].argv, environ);
-            ERR_SYS("execve failed");
+            err_sys("execve failed");
             _exit(127);
         }
 
@@ -544,7 +554,7 @@ void run_job(Job *job) {
     if (!job->background) {
         for (unsigned int i = 0; i < job->num_stages; i++) {
             if (waitpid(pids[i], NULL, 0) < 0) {
-                ERR_SYS("waitpid failed");
+                err_sys("waitpid failed");
             }
         }
     }
