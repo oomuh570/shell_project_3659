@@ -20,7 +20,7 @@ Purpose: Contains all the functions for implementing the shell
 #include "../include/alloc.h"
 #include "../include/job.h"
 #include "../include/strlib.h"
-
+#include "../include/signals.h"
 #define MAX_LINE 128
 #define MAX_PATH 1024
 
@@ -42,6 +42,9 @@ static int read_line(char *buf, int max) {
     while (1) {
         int r = read(0, &c, 1);
         if (r < 0) {
+		if (errno == EINTR) {
+	return -3; //interuppted by CTRL:-C
+	}
             ERR_SYS("read failed");
             return -1;
         }
@@ -573,7 +576,12 @@ void get_job(Job *job) {
         write(2, "Line too long\n", 14);
         return;
     }
+    if (r == -3) {
+	signals_clear_sigint();
+	return;
+    }
 
     free_all();
     tokenize_job(line, job);
 }
+
