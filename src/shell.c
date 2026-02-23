@@ -3,12 +3,12 @@
 #include <sys/wait.h>   // waitpid
 #include <errno.h>      // errno
 #include <string.h>     // strerror
+#include <sys/stat.h>
 #include "../include/shell.h"
 #include "../include/command.h"
 #include "../include/alloc.h"
 #include "../include/job.h"     
 #include "../include/strlib.h"
-
 #define MAX_LINE 128  
 
 /* Helper macro to write an error message with strerror */
@@ -360,7 +360,7 @@ char *find_path(const char *cmd){
   }
 
   if(!path_env){
-    path_env = "/bin:/user/bin";
+    path_env = "/bin:/usr/bin";
   }
 
   unsigned int cmd_len = strlen2(cmd);
@@ -381,18 +381,21 @@ char *find_path(const char *cmd){
 
     //building that path directory
     int j = 0;
-    for(j = 0; j < dir_len; j++)
-      path[j] = path_env[start + j];
+    for(int k = 0; k < dir_len; k++)
+      path[j++] = path_env[start + k];
 
     path[j++] = '/';
 
     //copying command
-    for (unsigned int k = 0; k < cmd_len; k++) //unsigned cause of compiler warning
-      path[j++] = cmd[k];
+    for (unsigned int l = 0; l < cmd_len; l++) //unsigned cause of compiler warning
+      path[j++] = cmd[l];
 
     path[j] = '\0';
 
-    return path;
+    struct stat sb;
+    if(stat(path, &sb) == 0){
+      return path;
+    }
 
     if(path_env[i] == '\0')
       break;
