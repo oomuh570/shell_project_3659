@@ -9,6 +9,7 @@ void run_command(const Command *cmd);
 void run_job(Job *job);
 void get_job(Job *job);
 int is_exit(Job *job);
+char *find_path(const char *cmd);
 //int is_exit(const Command *cmd);
 
 #endif

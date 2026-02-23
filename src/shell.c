@@ -7,6 +7,7 @@
 #include "../include/command.h"
 #include "../include/alloc.h"
 #include "../include/job.h"     
+#include "../include/strlib.h"
 
 #define MAX_LINE 128  
 
@@ -336,6 +337,73 @@ void run_command(const Command *cmd) {
     }
 }
 
+char *find_path(const char *cmd){
+  extern char **environ;
+
+  if (strcntn(cmd, '/')){
+    return (char *)cmd;
+  }
+
+  char *path_env = 0;
+
+  for (int i = 0; environ[i] != 0; i++) {
+
+    //checking if it starts with "PATH="
+    char *s = environ[i];
+
+    if (s[0]=='P' && s[1]=='A' && s[2]=='T' &&
+	s[3]=='H' && s[4]== '=') {
+
+      path_env = s + 5; //skip "PATH="
+      break;
+    }
+  }
+
+  if(!path_env){
+    path_env = "/bin:/user/bin";
+  }
+
+  unsigned int cmd_len = strlen2(cmd);
+
+  static char path[256]; //static cause of compiler warning
+
+  int i = 0;
+  int start = 0;
+
+  while (1) {
+
+    //finding end of path entry
+    while (path_env[i] != ':' && path_env[i] != '\0')
+	   i++;
+
+    //calculate length of directory
+    int dir_len = i - start;
+
+    //building that path directory
+    int j = 0;
+    for(j = 0; j < dir_len; j++)
+      path[j] = path_env[start + j];
+
+    path[j++] = '/';
+
+    //copying command
+    for (unsigned int k = 0; k < cmd_len; k++) //unsigned cause of compiler warning
+      path[j++] = cmd[k];
+
+    path[j] = '\0';
+
+    return path;
+
+    if(path_env[i] == '\0')
+      break;
+
+    i++;
+    start = i;
+  }
+  return 0;
+}
+
+    	  
 //note this is overbuilt and can handle more than 2 commands in an argument
 void run_job(Job *job) {
 	if (job->num_stages == 0) return;
@@ -382,9 +450,19 @@ void run_job(Job *job) {
                 close(pipefds[1]);
                 close(pipefds[0]);
             }
-			extern char **environ;
-            execve(job->pipeline[i].argv[0], job->pipeline[i].argv, environ);
-            ERR_SYS("execve failed");
+	    
+	    extern char **environ;
+	    
+	    char *path = find_path(job->pipeline[i].argv[0]);
+
+	    if(!path) {
+	      write(2, "command not found\n", 18);
+	      _exit(127);
+	    }
+
+	    execve(path, job->pipeline[i].argv, environ);
+	    
+	    ERR_SYS("execve failed");
             _exit(127);
         }
 
