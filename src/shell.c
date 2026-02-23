@@ -100,6 +100,15 @@ static char *copy_token(const char *line, int start, int end) {
 }
 
 
+/*
+
+FUNCTION: get_next_token
+PURPOSE: Retrieves the next token in the command line
+INPUT: *line - command line
+       *i - position counter
+OUTPUT: copy_token - a copy of the token found
+
+*/
 
 static char *get_next_token(const char *line, int *i) {
     int start;
@@ -125,9 +134,18 @@ static char *get_next_token(const char *line, int *i) {
     return copy_token(line, start, end);
 }
 
-/* Tokenize by spaces/tabs into cmd->argv/cmd->argc.
-   Handles "&" ONLY if it is the last token.
-   "&" is NOT stored in argv; it sets cmd->background = 1. */
+/*
+
+FUNCTION: tokenize
+PURPOSE: Creates tokens of each argument in the command line by spaces/tabs into cmd struct.
+         Handles "&" ONLY if it is the last token.
+         "&" is not stored in argv; sets cmd->background to 1.
+INPUT: *line - command line
+       *cmd - command being passed
+OUTPUT: none
+
+*/
+
 static void tokenize(const char *line, Command *cmd) {
     int i = 0;
 
@@ -170,6 +188,16 @@ static void tokenize(const char *line, Command *cmd) {
         cmd->argv[cmd->argc] = 0; /* keep NULL-terminated */
     }
 }
+
+/*
+
+FUNCTION: tokenize_job
+PURPOSE: Tokenizes jobs with pipelines in mind
+INPUT: *line - command line
+       *job - job to be tokenized
+OUTPUT: none
+
+*/
 
 static void tokenize_job(const char *line, Job *job) {
 	int i = 0;
@@ -265,6 +293,15 @@ static void tokenize_job(const char *line, Job *job) {
 	 }
 }
 
+/*
+
+FUNCTION: is_exit
+PURPOSE: Checks if exit has been written on the command line
+INPUT: *job - Job being checked
+OUTPUT s = "exit"
+
+*/
+
 int is_exit(Job *job) {
     if (job->num_stages != 1) return 0;
     Command *cmd = &job->pipeline[0];
@@ -273,12 +310,22 @@ int is_exit(Job *job) {
     return (s[0]=='e' && s[1]=='x' && s[2]=='i' && s[3]=='t' && s[4]=='\0');
 }
 
+//SHOULD THIS BE DELETED?
 /*
 int is_exit(const Command *cmd) {
     if (cmd->argc != 1) return 0;
     char *s = cmd->argv[0];
     return (s[0]=='e' && s[1]=='x' && s[2]=='i' && s[3]=='t' && s[4]=='\0');
 }*/
+
+/*
+
+FUNCTION: get_command
+PURPOSE: Getter funciton for finding a command with error checking
+INPUT: cmd - command to find
+OUTPUT: none
+
+*/
 
 void get_command(Command *cmd) {
     char line[MAX_LINE];
@@ -305,6 +352,15 @@ void get_command(Command *cmd) {
     /* tokenize + fill cmd, may set cmd->background */
     tokenize(line, cmd);
 }
+
+/*
+
+FUNCTION: run_command
+PURPOSE: runs commands and creates children using fork and execve
+INPUT: cmd - command to be run
+OUTPUT: none
+
+*/
 
 void run_command(const Command *cmd) {
     if (cmd->argc == 0) return;
@@ -336,6 +392,15 @@ void run_command(const Command *cmd) {
         /* simple background: do not wait */
     }
 }
+
+/*
+
+FUNCTION: find_path
+PURPOSE: Creates the path that is written before command for ease of access in the VM
+INPUT: cmd - command that is being altered
+OUTPUT: String containing full command path for execution 
+ 
+*/
 
 char *find_path(const char *cmd){
   extern char **environ;
@@ -408,6 +473,16 @@ char *find_path(const char *cmd){
 
     	  
 //note this is overbuilt and can handle more than 2 commands in an argument
+
+/* 
+
+FUNCTION: run_job
+PURPOSE: Runs the job being passed while creating children and duplication using fork() and dup2().
+         Executes job using execve().
+INPUT: *job - Job to be processed
+OUTPUT: none
+         
+*/
 void run_job(Job *job) {
 	if (job->num_stages == 0) return;
 
@@ -486,6 +561,15 @@ void run_job(Job *job) {
       }
     }
 }
+
+/*
+
+FUNCTION: get_job
+PURPOSE: Getter function to find the job to be processed
+INPUT: job - Job being processed
+OUTPUT: none
+
+*/
 
 void get_job(Job *job) {
 	char line[MAX_LINE];
