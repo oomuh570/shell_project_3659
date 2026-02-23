@@ -3,13 +3,14 @@
 #include <sys/wait.h>   // waitpid
 #include <errno.h>      // errno
 #include <string.h>     // strerror
-#include <sys/stat.h>
+#include <signal.h>     // signal
 #include "../include/shell.h"
 #include "../include/command.h"
 #include "../include/alloc.h"
 #include "../include/job.h"     
-#include "../include/strlib.h"
-#define MAX_LINE 128  
+
+#define MAX_LINE 128
+#define MAX_PATH 1024
 
 /* Helper macro to write an error message with strerror */
 #define ERR_SYS(msg) do { \
@@ -18,31 +19,9 @@
     write(2, "\n", 1); \
 } while(0)
 
-/*
-
-FUNCTION: print_prompt
-PURPOSE: Writes the char '$' a the beginning of the shell command line
-INPUT: none
-OUTPUT: none
-
-*/
-
 static void print_prompt(void) {
     write(1, "$ ", 2);
 }
-
-/*
-
-FUNCTION: read_line
-PURPOSE: Reads the input on the command line into buf, outputs
-         errors if read error or line too long
-INPUT: char *buf - command line buffer
-       int max - max size of buffer
-OUTPUT:  0 - length of line
-        -1 - read() fails or EOF
-        -2 - input line too long
-
-*/
 
 static int read_line(char *buf, int max) {
     int n = 0;
@@ -54,7 +33,7 @@ static int read_line(char *buf, int max) {
             ERR_SYS("read failed");
             return -1;
         }
-        if (r == 0) return -1; /* EOF */
+        if (r == 0) return -1;
 
         if (c == '\n') {
             buf[n] = '\0';
@@ -64,7 +43,6 @@ static int read_line(char *buf, int max) {
         if (n < max - 1) {
             buf[n++] = c;
         } else {
-            /* too long: flush rest of line */
             while (c != '\n') {
                 r = read(0, &c, 1);
                 if (r <= 0) break;
@@ -75,21 +53,9 @@ static int read_line(char *buf, int max) {
     }
 }
 
-/*
-
-FUNCTION: copy_token
-PURPOSE: to copy the token into head using the alloc function
-INPUT: *line - command line
-       start - beginning of line
-       end - end of line
-OUTPUT: 0 - if there is not enough space
-        tok - tokenized array
-
-*/
-
 static char *copy_token(const char *line, int start, int end) {
     int len = end - start;
-    char *tok = alloc(len + 1);      /* +1 for '\0' */
+    char *tok = alloc(len + 1);
     if (!tok) return 0;
 
     for (int i = 0; i < len; i++) {
@@ -112,19 +78,17 @@ OUTPUT: copy_token - a copy of the token found
 
 static char *get_next_token(const char *line, int *i) {
     int start;
-	int end;
-	//
+    int end;
+
     while (line[*i] == ' ' || line[*i] == '\t') {
         (*i)++;
     }
 
     if (line[*i] == '\0' || line[*i] == '|' || line[*i] == '<' || line[*i] == '>' || line[*i] == '&') {
-        //
         return 0; 
     }
 
     start = *i;
-    //
     while (line[*i] != '\0' && line[*i] != ' ' && line[*i] != '\t' && 
            line[*i] != '<' && line[*i] != '>' && line[*i] != '|' && line[*i] != '&') {
         (*i)++;
@@ -150,7 +114,6 @@ static void tokenize(const char *line, Command *cmd) {
     int i = 0;
 
     while (line[i] != '\0') {
-        /* skip whitespace */
         while (line[i] == ' ' || line[i] == '\t') i++;
         if (line[i] == '\0') break;
 
@@ -158,15 +121,13 @@ static void tokenize(const char *line, Command *cmd) {
         while (line[i] != '\0' && line[i] != ' ' && line[i] != '\t') i++;
         int end = i;
 
-        /* Detect token exactly "&" */
         if ((end - start) == 1 && line[start] == '&') {
-            /* Only valid if it's the LAST token (ignoring trailing spaces) */
             int j = end;
             while (line[j] == ' ' || line[j] == '\t') j++;
 
             if (line[j] == '\0') {
                 cmd->background = 1;
-                return; /* stop tokenizing */
+                return;
             } else {
                 write(2, "& must be at end\n", 17);
                 return;
@@ -185,7 +146,7 @@ static void tokenize(const char *line, Command *cmd) {
         }
 
         cmd->argv[cmd->argc++] = tok;
-        cmd->argv[cmd->argc] = 0; /* keep NULL-terminated */
+        cmd->argv[cmd->argc] = 0;
     }
 }
 
@@ -200,18 +161,16 @@ OUTPUT: none
 */
 
 static void tokenize_job(const char *line, Job *job) {
-	int i = 0;
-	int start;
-	int end;
-	unsigned int current_stage = 0;
-	char *tok;
+    int i = 0;
+    int start;
+    int end;
+    unsigned int current_stage = 0;
+    char *tok;
 	
-	 while (line[i] != '\0') {
-        /* skip whitespace */
+    while (line[i] != '\0') {
         while (line[i] == ' ' || line[i] == '\t') i++;
         if (line[i] == '\0') break;
 		
-		//
         start = i;
         while (line[i] != '\0' && line[i] != ' ' && line[i] != '\t' && 
                line[i] != '<' && line[i] != '>' && line[i] != '|' && line[i] != '&') {
@@ -219,70 +178,60 @@ static void tokenize_job(const char *line, Job *job) {
         }
         end = i;
 
-        //
         if (start == end) end = ++i;
 		
-		tok = copy_token(line, start, end);
+        tok = copy_token(line, start, end);
 		
-		if (tok[0] == '|') {
-            // must have a command before pipe and cannot exceed max stages
+        if (tok[0] == '|') {
             if (job->pipeline[current_stage].argc == 0) {
                 write(2, "syntax error: '|' cannot start command\n", 40);
-                job->num_stages = 0; // invalidate job
+                job->num_stages = 0;
                 return;
             } 
             else if (current_stage >= MAX_PIPELINE_LEN - 1) {
                 write(2, "syntax error: too many pipeline stages\n", 40);
-                job->num_stages = 0; // invalidate job
+                job->num_stages = 0;
                 return;
             } 
 
-            // move to next stage
             current_stage++;
             job->num_stages = current_stage + 1;
 
-            // next must not be end or another special char
             while (line[i] == ' ' || line[i] == '\t') i++;
             if (line[i] == '\0' || line[i] == '|' || line[i] == '<' || line[i] == '>' || line[i] == '&') {
                 write(2, "syntax error: '|' must be followed by command\n", 47);
-                job->num_stages = 0; // invalidate job
+                job->num_stages = 0;
                 return;
             }
-    
         }
-     
-		else if (tok[0] == '<') {
-            // infile
+        else if (tok[0] == '<') {
             job->infile_path = get_next_token(line, &i);
             if (!job->infile_path) {
                 write(2, "Expected input file after '<'\n", 30);
                 return;
             }
         } 
-		else if (tok[0] == '>') {
-            // outfile
+        else if (tok[0] == '>') {
             job->outfile_path = get_next_token(line, &i);
             if (!job->outfile_path) {
                 write(2, "Expected output file after '>'\n", 31);
-                job->num_stages = 0; // ensure it's null if error
+                job->num_stages = 0;
                 return;
             }
         } 
-		else if (tok[0] == '&') {
+        else if (tok[0] == '&') {
             job->background = 1;
 
-            /* Only valid if it's the LAST token (ignoring trailing spaces) */
             while (line[i] == ' ' || line[i] == '\t') i++;
 
             if (line[i] != '\0') {
                 write(2, "syntax error: '&' must be at end\n", 33);
-                job->num_stages = 0;  // invalidate job
+                job->num_stages = 0;
                 job->background = 0;
             }
-            return; /* stop tokenizing */
+            return;
         } 
-		else {
-            // 
+        else {
             Command *cmd = &job->pipeline[current_stage];
             if (cmd->argc < MAX_ARGS) {
                 cmd->argv[cmd->argc++] = tok;
@@ -290,7 +239,7 @@ static void tokenize_job(const char *line, Job *job) {
             }
             if (job->num_stages <= current_stage) job->num_stages = current_stage + 1;
         }
-	 }
+    }
 }
 
 /*
@@ -316,7 +265,7 @@ int is_exit(const Command *cmd) {
     if (cmd->argc != 1) return 0;
     char *s = cmd->argv[0];
     return (s[0]=='e' && s[1]=='x' && s[2]=='i' && s[3]=='t' && s[4]=='\0');
-}*/
+}
 
 /*
 
@@ -335,7 +284,6 @@ void get_command(Command *cmd) {
 
     int r = read_line(line, MAX_LINE);
     if (r == -1) {
-        /* EOF/error -> exit */
         cmd->argv[0] = "exit";
         cmd->argc = 1;
         cmd->argv[1] = 0;
@@ -346,10 +294,7 @@ void get_command(Command *cmd) {
         return;
     }
 
-    /* reset heap before tokenizing */
     free_all();
-
-    /* tokenize + fill cmd, may set cmd->background */
     tokenize(line, cmd);
 }
 
@@ -373,23 +318,17 @@ void run_command(const Command *cmd) {
     }
 
     if (pid == 0) {
-        /* child */
         extern char **environ;
         execve(cmd->argv[0], cmd->argv, environ);
-
-        /* if execve returns, it failed */
         ERR_SYS("execve failed");
         _exit(127);
     }
 
-    /* parent: only wait if NOT background */
     if (!cmd->background) {
         int status;
         if (waitpid(pid, &status, 0) < 0) {
             ERR_SYS("waitpid failed");
         }
-    } else {
-        /* simple background: do not wait */
     }
 }
 
@@ -422,44 +361,25 @@ char *find_path(const char *cmd){
       path_env = s + 5; //skip "PATH="
       break;
     }
-  }
 
-  if(!path_env){
-    path_env = "/bin:/usr/bin";
-  }
+    /* handle built-in pwd command */
+    if (job->num_stages == 1) {
+        Command *cmd = &job->pipeline[0];
+        if (cmd->argc >= 1 &&
+            cmd->argv[0][0] == 'p' &&
+            cmd->argv[0][1] == 'w' &&
+            cmd->argv[0][2] == 'd' &&
+            cmd->argv[0][3] == '\0') {
 
-  unsigned int cmd_len = strlen2(cmd);
-
-  static char path[256]; //static cause of compiler warning
-
-  int i = 0;
-  int start = 0;
-
-  while (1) {
-
-    //finding end of path entry
-    while (path_env[i] != ':' && path_env[i] != '\0')
-	   i++;
-
-    //calculate length of directory
-    int dir_len = i - start;
-
-    //building that path directory
-    int j = 0;
-    for(int k = 0; k < dir_len; k++)
-      path[j++] = path_env[start + k];
-
-    path[j++] = '/';
-
-    //copying command
-    for (unsigned int l = 0; l < cmd_len; l++) //unsigned cause of compiler warning
-      path[j++] = cmd[l];
-
-    path[j] = '\0';
-
-    struct stat sb;
-    if(stat(path, &sb) == 0){
-      return path;
+            char buf[MAX_PATH];
+            if (getcwd(buf, sizeof(buf)) == NULL) {
+                ERR_SYS("pwd failed");
+            } else {
+                write(1, buf, strlen(buf));
+                write(1, "\n", 1);
+            }
+            return;
+        }
     }
 
     if(path_env[i] == '\0')
@@ -491,7 +411,6 @@ void run_job(Job *job) {
     pid_t pids[MAX_PIPELINE_LEN];
     
     for (unsigned int i = 0; i < job->num_stages; i++) {
-        // make pipe
         if (i < job->num_stages - 1) {
             if (pipe(pipefds) < 0) {
                 ERR_SYS("pipe failed");
@@ -506,6 +425,9 @@ void run_job(Job *job) {
         }
 
         if (pid == 0) {
+            /* reset SIGINT so child can be killed by Ctrl+C */
+            signal(SIGINT, SIG_DFL);
+
             // Input handling
             if (i == 0 && job->infile_path) {
                 int fd = open(job->infile_path, O_RDONLY);
@@ -528,37 +450,28 @@ void run_job(Job *job) {
                 close(pipefds[1]);
                 close(pipefds[0]);
             }
-	    
-	    extern char **environ;
-	    
-	    char *path = find_path(job->pipeline[i].argv[0]);
 
-	    if(!path) {
-	      write(2, "command not found\n", 18);
-	      _exit(127);
-	    }
-
-	    execve(path, job->pipeline[i].argv, environ);
-	    
-	    ERR_SYS("execve failed");
+            extern char **environ;
+            execve(job->pipeline[i].argv[0], job->pipeline[i].argv, environ);
+            ERR_SYS("execve failed");
             _exit(127);
         }
 
-	pids[i] = pid; //adding pid to array of pids
+        pids[i] = pid;
 	
         if (i > 0) close(prev_pipe_read);
         if (i < job->num_stages - 1) {
             close(pipefds[1]);
             prev_pipe_read = pipefds[0];
         }
-
     }
-    if(!job->background) {
-      for(unsigned int i = 0; i < job->num_stages; i++) {
-        if (waitpid(pids[i], NULL, 0) < 0) {
-            ERR_SYS("waitpid failed");
+
+    if (!job->background) {
+        for (unsigned int i = 0; i < job->num_stages; i++) {
+            if (waitpid(pids[i], NULL, 0) < 0) {
+                ERR_SYS("waitpid failed");
+            }
         }
-      }
     }
 }
 
@@ -572,14 +485,13 @@ OUTPUT: none
 */
 
 void get_job(Job *job) {
-	char line[MAX_LINE];
+    char line[MAX_LINE];
 
-    job_init(job); //
+    job_init(job);
     print_prompt();
 
     int r = read_line(line, MAX_LINE);
     if (r == -1) {
-        //
         job->pipeline[0].argv[0] = "exit";
         job->pipeline[0].argc = 1;
         job->num_stages = 1;
@@ -590,9 +502,6 @@ void get_job(Job *job) {
         return;
     }
 
-    //
     free_all();
-
-    //
     tokenize_job(line, job);
 }
